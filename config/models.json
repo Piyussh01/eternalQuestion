@@ -1,0 +1,56 @@
+{
+  "explorer": {
+    "name": "explorer",
+    "description": "Gemma 4 26B MoE (4B active) — fast question generation",
+    "base_url": "http://localhost:8001/v1",
+    "model_id": "google/gemma-4-26b-a4b-it",
+    "vllm_args": {
+      "model": "google/gemma-4-26b-a4b-it",
+      "port": 8001,
+      "dtype": "auto",
+      "max-model-len": 16384,
+      "gpu-memory-utilization": 0.40,
+      "max-num-seqs": 8,
+      "enable-prefix-caching": true,
+      "quantization": "fp8",
+      "trust-remote-code": true
+    },
+    "generation": {
+      "temperature": 0.9,
+      "top_p": 0.95,
+      "max_tokens": 1024
+    }
+  },
+  "reasoner": {
+    "name": "reasoner",
+    "description": "Gemma 4 31B Dense — deep reasoning for debates and judging",
+    "base_url": "http://localhost:8002/v1",
+    "model_id": "google/gemma-4-31b-it",
+    "vllm_args": {
+      "model": "google/gemma-4-31b-it",
+      "port": 8002,
+      "dtype": "auto",
+      "max-model-len": 32768,
+      "gpu-memory-utilization": 0.55,
+      "max-num-seqs": 4,
+      "enable-prefix-caching": true,
+      "quantization": "fp8",
+      "trust-remote-code": true
+    },
+    "generation": {
+      "temperature": 0.6,
+      "top_p": 0.9,
+      "max_tokens": 1024
+    }
+  },
+  "memory_budget": {
+    "total_unified_memory_gb": 128,
+    "explorer_weights_gb": 13,
+    "reasoner_weights_gb": 16,
+    "vllm_overhead_gb": 4,
+    "kv_cache_reserved_gb": 20,
+    "system_reserved_gb": 5,
+    "headroom_gb": 70,
+    "notes": "KV cache uses FP8 with PagedAttention. max-model-len capped to control memory. 70GB headroom allows burst batching."
+  }
+}

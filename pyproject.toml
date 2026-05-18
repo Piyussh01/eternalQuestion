@@ -1,0 +1,32 @@
+[project]
+name = "eternal-question"
+version = "0.1.0"
+description = "Deep Thought 2.0 — Finding the Ultimate Question of Life, the Universe, and Everything"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "Deep Thought 2.0 Team" }
+]
+keywords = ["ai", "mcts", "debate", "hitchhikers-guide", "local-llm", "dgx-spark"]
+
+dependencies = [
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+serve = [
+    "vllm>=0.7.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
