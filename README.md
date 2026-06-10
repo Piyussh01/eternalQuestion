@@ -7,8 +7,9 @@ perspective questions; a larger model turns those perspectives into candidate
 answers, critiques them, and keeps narrowing toward one answer. The goal is the
 answer to the meaning of life, nothing more and nothing less.
 
-Everything runs locally: vLLM model servers, the Python orchestrator, SQLite
-history, and an optional Next.js dashboard for public monitoring.
+The experiment runs locally: vLLM model servers, the Python orchestrator, and
+SQLite history stay on the Spark. For a public website, a read-only exporter can
+mirror public trace rows to Supabase while Vercel serves the Next.js dashboard.
 
 ## Architecture
 
@@ -25,6 +26,9 @@ Model comparison
         │
         ▼
 SQLite leaderboard + elimination history
+        │
+        ▼
+Supabase public mirror + Vercel dashboard
         │
         ▼
 AutoResearch proposes conservative process changes
@@ -91,13 +95,27 @@ Outputs are written to:
 
 ## Public Dashboard
 
-The optional Next.js dashboard lives in `web/` and polls the SQLite database for
-live public traces.
+The Next.js dashboard lives in `web/`. Locally, it reads SQLite. On Vercel, set
+Supabase env vars and it reads the hosted public mirror instead.
 
 ```bash
 cd web
 npm install
 npm run dev
+```
+
+For hosted deployment:
+
+1. Run `scripts/supabase_schema.sql` in the Supabase SQL editor.
+2. Set these Vercel env vars for the `web/` project:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+3. On the Spark, start the exporter with private write credentials:
+
+```bash
+export SUPABASE_URL=https://your-project-ref.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+nohup bash scripts/run_supabase_exporter.sh > logs/supabase_exporter.log 2>&1 &
 ```
 
 The dashboard is designed to show the experiment as it happens: active
@@ -118,6 +136,7 @@ src/
 scripts/
   start_vllm.sh      # starts both local model servers
   run.sh             # runs the 24-hour experiment
+  run_supabase_exporter.sh # mirrors public rows to Supabase
   stop.sh            # stops vLLM servers
 web/                 # realtime Next.js dashboard
 config/models.json   # model serving configuration
