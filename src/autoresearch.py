@@ -1,17 +1,9 @@
 """
-AutoResearch Loop for Deep Thought 2.0
+Conservative AutoResearch for the 24-hour meaning-of-life experiment.
 
-Inspired by Karpathy's autoresearch: an autonomous experimentation loop
-that modifies the system's own parameters, runs experiments, and keeps
-only changes that improve results.
-
-Instead of modifying train.py, we modify:
-- Expansion prompts (how questions are generated)
-- Scoring rubric weights (what matters most)
-- Debate protocol parameters
-- MCTS exploration constants
-
-Metric: average composite score of top-10 questions per experiment window.
+This is an experiment scheduler, not an aggressive hill-climber. It proposes
+small process changes, runs them for a window, and only promotes a config after
+repeated evidence.
 """
 
 import asyncio
@@ -31,26 +23,21 @@ logger = logging.getLogger("deep-thought.autoresearch")
 class ExperimentConfig:
     """The mutable parameters that autoresearch optimizes."""
 
-    # Scoring rubric weights (must sum to 1.0)
-    math_weight: float = 0.25
-    philosophy_weight: float = 0.30
-    humor_weight: float = 0.25
-    universality_weight: float = 0.20
+    # Perspective and candidate generation
+    perspectives_per_cycle: int = 5
+    answers_per_perspective: int = 2
 
-    # MCTS parameters
-    exploration_constant: float = 1.414
-    expand_count: int = 5
+    # Model comparison
+    comparison_rounds: int = 2
 
-    # Debate parameters
-    debate_rounds: int = 3
-    max_proposer_tokens: int = 800
-    max_opponent_tokens: int = 800
-    proposer_temperature: float = 0.7
-    opponent_temperature: float = 0.7
+    # Generation parameters
+    explorer_temperature: float = 0.9
+    reasoner_temperature: float = 0.65
+    generation_prompt_suffix: str = ""
 
-    # Expansion parameters
-    expansion_temperature: float = 0.9
-    expansion_prompt_suffix: str = ""
+    # Promotion gate
+    promotion_margin: float = 0.3
+    required_wins: int = 3
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items()}
@@ -65,24 +52,23 @@ class ExperimentResult:
     """Outcome of a single experiment window."""
     config: ExperimentConfig
     top_10_avg_score: float
-    questions_generated: int
-    debates_completed: int
+    answers_generated: int
+    evaluations_completed: int
     duration_seconds: float
-    top_question: str
+    top_answer: str
     top_score: float
 
 
-HYPOTHESIS_SYSTEM = """You are an AI research scientist optimizing an autonomous question-generation
-system. The system uses MCTS + adversarial debate to find the Ultimate Question of Life, the
-Universe, and Everything (whose answer is 42).
+HYPOTHESIS_SYSTEM = """You are an AI research scientist optimizing a 24-hour experiment that tries
+to answer exactly one question: "What is the meaning of life?"
 
 You are given the current configuration parameters and recent experiment results.
-Your job: propose ONE specific parameter change that might improve the average score.
+Your job: propose ONE small process change that might improve candidate answer quality.
 
 RULES:
 1. Change ONLY ONE parameter at a time (scientific method)
 2. Make targeted changes based on evidence from past results
-3. Weight changes must keep the sum at 1.0
+3. Do not change the target question
 4. Temperature changes should be small (0.05-0.15 increments)
 5. Provide clear reasoning for your hypothesis
 
@@ -118,6 +104,7 @@ class AutoResearchLoop:
         self.current_config = ExperimentConfig()
         self.best_config = ExperimentConfig()
         self.best_score = 0.0
+        self.pending_wins = 0
         self.experiment_history: list[dict] = []
         self.experiment_count = 0
         self.improvements = 0
@@ -132,10 +119,10 @@ class AutoResearchLoop:
                 f"\nExperiment {i + 1}:\n"
                 f"  Config: {json.dumps(result.config.to_dict(), indent=2)}\n"
                 f"  Top-10 Avg Score: {result.top_10_avg_score:.3f}\n"
-                f"  Top Question: \"{result.top_question}\"\n"
+                f"  Top Answer: \"{result.top_answer}\"\n"
                 f"  Top Score: {result.top_score:.2f}\n"
-                f"  Questions Generated: {result.questions_generated}\n"
-                f"  Debates Completed: {result.debates_completed}\n"
+                f"  Answers Generated: {result.answers_generated}\n"
+                f"  Evaluations Completed: {result.evaluations_completed}\n"
             )
 
         prompt = (
@@ -144,7 +131,7 @@ class AutoResearchLoop:
             f"RECENT EXPERIMENT HISTORY:{history_str}\n\n"
             f"EXPERIMENT COUNT: {self.experiment_count} "
             f"(improvements: {self.improvements}, rollbacks: {self.rollbacks})\n\n"
-            f"Propose ONE parameter change to improve the top-10 average score."
+            f"Propose ONE parameter change to improve answer quality."
         )
 
         response = await self.reasoner.generate(
@@ -178,46 +165,54 @@ class AutoResearchLoop:
             logger.warning("[AUTORESEARCH] Unknown parameter: %s", param)
             return new_config
 
-        # Validate weight changes
-        if param.endswith("_weight"):
-            # Adjust the changed weight and normalize
-            setattr(new_config, param, new_value)
-            total = (
-                new_config.math_weight
-                + new_config.philosophy_weight
-                + new_config.humor_weight
-                + new_config.universality_weight
-            )
-            if total > 0:
-                new_config.math_weight /= total
-                new_config.philosophy_weight /= total
-                new_config.humor_weight /= total
-                new_config.universality_weight /= total
-        else:
-            setattr(new_config, param, new_value)
+        setattr(new_config, param, new_value)
+        self._clamp_config(new_config)
 
         return new_config
 
+    def _clamp_config(self, config: ExperimentConfig) -> None:
+        config.perspectives_per_cycle = int(max(1, min(12, config.perspectives_per_cycle)))
+        config.answers_per_perspective = int(max(1, min(4, config.answers_per_perspective)))
+        config.comparison_rounds = int(max(1, min(4, config.comparison_rounds)))
+        config.explorer_temperature = max(0.2, min(1.2, float(config.explorer_temperature)))
+        config.reasoner_temperature = max(0.2, min(1.0, float(config.reasoner_temperature)))
+        config.promotion_margin = max(0.0, min(2.0, float(config.promotion_margin)))
+        config.required_wins = int(max(1, min(5, config.required_wins)))
+
     def evaluate_experiment(self, result: ExperimentResult) -> bool:
         """Compare result against best. Return True if improved."""
-        improved = result.top_10_avg_score > self.best_score
+        previous_best = self.best_score
+        improved = result.top_10_avg_score >= self.best_score + self.current_config.promotion_margin
 
         if improved:
-            self.best_score = result.top_10_avg_score
-            self.best_config = copy.deepcopy(result.config)
-            self.improvements += 1
-            logger.info(
-                "[AUTORESEARCH] IMPROVEMENT! %.3f -> %.3f (+%.3f) | Keeping change",
-                self.best_score - (result.top_10_avg_score - self.best_score),
-                self.best_score,
-                result.top_10_avg_score - (self.best_score - (result.top_10_avg_score - self.best_score)),
-            )
+            self.pending_wins += 1
+            if self.pending_wins >= self.current_config.required_wins:
+                self.best_score = result.top_10_avg_score
+                self.best_config = copy.deepcopy(result.config)
+                self.current_config = copy.deepcopy(result.config)
+                self.improvements += 1
+                self.pending_wins = 0
+                logger.info(
+                    "[AUTORESEARCH] PROMOTED config %.3f -> %.3f (+%.3f)",
+                    previous_best,
+                    self.best_score,
+                    self.best_score - previous_best,
+                )
+            else:
+                logger.info(
+                    "[AUTORESEARCH] Win %d/%d for candidate config (score %.3f, best %.3f)",
+                    self.pending_wins,
+                    self.current_config.required_wins,
+                    result.top_10_avg_score,
+                    self.best_score,
+                )
         else:
             self.rollbacks += 1
+            self.pending_wins = 0
             self.current_config = copy.deepcopy(self.best_config)
             logger.info(
                 "[AUTORESEARCH] No improvement (%.3f <= %.3f). Rolling back.",
-                result.top_10_avg_score, self.best_score,
+                result.top_10_avg_score, self.best_score + self.current_config.promotion_margin,
             )
 
         # Log experiment
@@ -227,7 +222,7 @@ class AutoResearchLoop:
             "timestamp": time.time(),
             "config": result.config.to_dict(),
             "top_10_avg_score": result.top_10_avg_score,
-            "top_question": result.top_question,
+            "top_answer": result.top_answer,
             "top_score": result.top_score,
             "improved": improved,
             "best_score": self.best_score,
@@ -251,6 +246,7 @@ class AutoResearchLoop:
             "best_score": self.best_score,
             "best_config": self.best_config.to_dict(),
             "current_config": self.current_config.to_dict(),
+            "pending_wins": self.pending_wins,
         }
 
     def log_status(self):
@@ -258,14 +254,15 @@ class AutoResearchLoop:
         summary = self.get_summary()
         logger.info(
             "[AUTORESEARCH] Experiment #%d | Best: %.3f | Improvements: %d/%d (%.0f%%) | "
-            "Current weights: math=%.2f phil=%.2f humor=%.2f univ=%.2f",
+            "Config: perspectives=%d answers/perspective=%d rounds=%d temps=(%.2f, %.2f)",
             summary["experiment_count"],
             summary["best_score"],
             summary["improvements"],
             summary["experiment_count"],
             summary["improvement_rate"] * 100,
-            self.current_config.math_weight,
-            self.current_config.philosophy_weight,
-            self.current_config.humor_weight,
-            self.current_config.universality_weight,
+            self.current_config.perspectives_per_cycle,
+            self.current_config.answers_per_perspective,
+            self.current_config.comparison_rounds,
+            self.current_config.explorer_temperature,
+            self.current_config.reasoner_temperature,
         )

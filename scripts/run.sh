@@ -11,10 +11,14 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 HOURS="${1:-24}"
+PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
+if [ ! -x "$PYTHON_BIN" ]; then
+    PYTHON_BIN="python3"
+fi
 
 echo "============================================"
 echo "  DEEP THOUGHT 2.0"
-echo "  The Eternal Question"
+echo "  Meaning of Life"
 echo "  Runtime: ${HOURS} hours"
 echo "  Started: $(date)"
 echo "============================================"
@@ -42,10 +46,10 @@ mkdir -p logs/debates
 
 # Launch the orchestrator
 echo "[LAUNCH] Starting Deep Thought orchestrator..."
-python -m src.orchestrator --hours "$HOURS"
+"$PYTHON_BIN" -m src.orchestrator --hours "$HOURS"
 
 echo ""
 echo "[DONE] Deep Thought 2.0 has finished."
 echo "[DONE] Results: logs/final_results.json"
 echo "[DONE] Full report: logs/run_report.json"
-echo "[DONE] Tree database: logs/mcts_tree.db"
+echo "[DONE] Experiment database: logs/deep_thought.db"

@@ -1,163 +1,149 @@
 # Deep Thought 2.0
 
-**Finding the Ultimate Question of Life, the Universe, and Everything.**
+**A 24-hour local AI experiment to answer one question: what is the meaning of life?**
 
-*Deep Thought took 7.5 million years. We're giving it 24 hours and a GPU.*
+This project runs two local models on NVIDIA DGX Spark. A small model generates
+perspective questions; a larger model turns those perspectives into candidate
+answers, critiques them, and keeps narrowing toward one answer. The goal is the
+answer to the meaning of life, nothing more and nothing less.
 
----
-
-In Douglas Adams' Hitchhiker's Guide to the Galaxy, the supercomputer Deep
-Thought computed for 7.5 million years and returned **42** as the Answer to the
-Ultimate Question of Life, the Universe, and Everything. But nobody knew what
-the Question was.
-
-This project rebuilds Deep Thought on a desk. A 24-hour autonomous AI
-experiment running on NVIDIA DGX Spark, using Monte Carlo Tree Search +
-Adversarial Debate to find the Question whose answer is 42.
+Everything runs locally: vLLM model servers, the Python orchestrator, SQLite
+history, and an optional Next.js dashboard for public monitoring.
 
 ## Architecture
 
 ```
-MCTS Tree Search (generates candidate questions)
+Gemma 4 E4B generates perspective questions
+birth, death, love, suffering, science, faith, ecology, art
         │
         ▼
-Adversarial Debate (two AIs argue for/against each candidate)
+Gemma 4 26B MoE synthesizes candidate answers
         │
         ▼
-Judge Evaluation (scores on 4 axes: math, philosophy, humor, universality)
+Model comparison
+26B defends, E4B stress-tests, 26B judges
         │
         ▼
-Backpropagation (updates tree, best candidates rise to the top)
+SQLite leaderboard + elimination history
         │
         ▼
-AutoResearch Loop (meta-optimizes the system's own parameters)
+AutoResearch proposes conservative process changes
 ```
 
-**Two local models running simultaneously:**
-- **Gemma 4 26B MoE** (4B active params) — fast question generation
-- **Gemma 4 31B Dense** — deep reasoning for debates and judging
+## Models
 
-Everything runs locally. No cloud. No API calls. Just a GPU contemplating
-existence.
+- **Explorer / Perspective Generator**: `google/gemma-4-E4B-it` on port `8001`
+  - High-temperature generation of lenses, probes, and perspective questions.
+- **Reasoner / MoE**: `google/gemma-4-26b-a4b-it` on port `8002`
+  - Lower-temperature answer synthesis, critique, and judging.
+
+Serving is tuned for DGX Spark: both models use FP8 and FP8 KV cache. The E4B
+server uses 4k context, one sequence, and a small KV allocation because it only
+writes perspective prompts. The 26B MoE server keeps 8k context and a
+conservative one-sequence setting because it does the answer synthesis,
+critique, and judging.
+
+The dashboard and logs show public model outputs: candidate answers, advocacy,
+critique, judge reasoning, scores, and ranking changes. They do not expose or
+claim hidden chain-of-thought.
+
+## Scoring
+
+Each answer is scored from 0-10 on four axes:
+
+| Axis | Weight | Meaning |
+|---|---:|---|
+| Directness | 0.30 | Answers the meaning of life, nothing more and nothing less |
+| Depth | 0.30 | Carries real philosophical weight without padding |
+| Universality | 0.20 | Applies across many kinds of conscious beings |
+| Resilience | 0.20 | Survives critique from the opposing model |
+
+## 24-Hour Phases
+
+| Phase | Hours | Strategy |
+|---|---:|---|
+| Warm-up | 0-1 | Seed answers and calibrate perspective probes |
+| Exploration | 1-12 | Sweep many perspectives across human experience |
+| Refinement | 12-20 | Attack stronger answers from neglected perspectives |
+| Consensus | 20-23 | Compress recurring truths into shorter candidates |
+| Final Judgment | 23-24 | Re-evaluate top answers with full comparisons |
 
 ## Quick Start
 
 ```bash
-# 1. Install
-pip install -e .
-
-# 2. Start model servers (requires GPU + vLLM)
+pip install -e ".[dev,serve]"
 bash scripts/start_vllm.sh
-
-# 3. Run Deep Thought (default: 24 hours)
-bash scripts/run.sh
-
-# Short test run:
-bash scripts/run.sh 1
+bash scripts/run.sh          # default: 24 hours
+bash scripts/run.sh 1        # one-hour test run
 ```
 
-## How It Works
+`scripts/start_vllm.sh` calls `vllm serve` for both Hugging Face model IDs.
+On first run, vLLM downloads model weights into the Hugging Face cache. If
+Hugging Face requires access approval for a model, run `huggingface-cli login`
+on the Spark or set `HF_TOKEN` before starting the servers.
 
-### MCTS + Debate
+Outputs are written to:
 
-1. **Select**: UCB1 picks the most promising unexplored branch
-2. **Expand**: The 26B MoE generates 3-5 candidate questions (fast, creative)
-3. **Debate**: Two 31B Dense agents argue FOR and AGAINST each candidate
-4. **Judge**: A third 31B agent scores the debate on 4 axes (0-10 each)
-5. **Backpropagate**: Scores flow up the tree; good questions rise
+- `logs/deep_thought.db` - SQLite candidate/evaluation history
+- `logs/run_report.json` - full run summary
+- `logs/final_results.json` - top final answers
+- `logs/deep_thought.log` - structured runtime logs
 
-### Scoring Rubric
+## Public Dashboard
 
-| Axis | Weight | What It Measures |
-|---|---|---|
-| Mathematical | 0.25 | Does the answer naturally equal 42? |
-| Philosophical | 0.30 | Does it address life, the universe, everything? |
-| Humor | 0.25 | Would Douglas Adams approve? |
-| Universality | 0.20 | Would all conscious beings ask this? |
+The optional Next.js dashboard lives in `web/` and polls the SQLite database for
+live public traces.
 
-### AutoResearch (Karpathy Pattern)
+```bash
+cd web
+npm install
+npm run dev
+```
 
-A meta-optimization loop modifies the system's own parameters during the run.
-The LLM proposes parameter changes, runs experiments, keeps improvements, rolls
-back failures. The system literally improves its own brain over 24 hours.
-
-### Phases
-
-| Phase | Hours | Strategy |
-|---|---|---|
-| Warm-up | 0-1 | Seed tree, calibrate scoring |
-| Exploration | 1-8 | High exploration, broad search, quick debates |
-| Exploitation | 8-16 | Deep debates on top candidates |
-| Convergence | 16-23 | Refine and cross-pollinate best candidates |
-| Final Judgment | 23-24 | Tournament bracket of top 8 |
-
-## Requirements
-
-- **Hardware**: NVIDIA DGX Spark (128GB unified memory) or equivalent GPU setup
-- **Software**: Python 3.11+, vLLM, CUDA 12+
-- **Models**: Gemma 4 26B MoE + Gemma 4 31B Dense (downloaded automatically)
+The dashboard is designed to show the experiment as it happens: active
+perspective, candidate answers, advocacy/critique excerpts, judge reasoning,
+scores, leaderboard movement, and eliminated answers. It should make the search
+legible to the public without claiming to expose hidden chain-of-thought.
 
 ## Project Structure
 
 ```
-eternalQuestion/
-├── src/
-│   ├── orchestrator.py    # Main 24-hour loop
-│   ├── mcts.py            # Monte Carlo Tree Search engine
-│   ├── debate.py          # Adversarial debate arena
-│   ├── expander.py        # Question generation
-│   ├── autoresearch.py    # Karpathy-style meta-optimization
-│   ├── llm_client.py      # vLLM API client
-│   └── logger_setup.py    # Structured logging
-├── config/
-│   └── models.json        # Model serving configuration
-├── scripts/
-│   ├── start_vllm.sh      # Launch model servers
-│   ├── run.sh             # Launch Deep Thought
-│   └── stop.sh            # Graceful shutdown
-├── docs/
-│   ├── SETUP.md           # DGX Spark setup guide
-│   └── MARKETING.md       # Marketing playbook
-├── logs/                  # Runtime artifacts
-│   ├── mcts_tree.db       # SQLite: full MCTS tree (crash-recoverable)
-│   ├── debates/           # Full debate transcripts
-│   └── final_results.json # Top candidates with scores
-└── PLAN.md                # Full architecture document
-```
-
-## Crash Recovery
-
-The MCTS tree is persisted in SQLite. If Deep Thought crashes at hour 18, just
-restart — it resumes from the last state. No work is ever lost.
-
-```bash
-# Crashed? Just restart.
-bash scripts/run.sh
+src/
+  orchestrator.py    # 24-hour perspective-to-answer experiment loop
+  debate.py          # model comparison and judging
+  expander.py        # perspective and answer generation
+  autoresearch.py    # conservative process experiment scheduler
+  db.py              # SQLite persistence
+  llm_client.py      # vLLM OpenAI-compatible client
+scripts/
+  start_vllm.sh      # starts both local model servers
+  run.sh             # runs the 24-hour experiment
+  stop.sh            # stops vLLM servers
+web/                 # realtime Next.js dashboard
+config/models.json   # model serving configuration
 ```
 
 ## Monitoring
 
 ```bash
-# Live leaderboard
-watch -n 30 'sqlite3 logs/mcts_tree.db "
-  SELECT question, ROUND(total_score/visits, 2) as avg, visits
-  FROM nodes WHERE visits > 0 AND parent_id IS NOT NULL
-  ORDER BY avg DESC LIMIT 10"'
+sqlite3 logs/deep_thought.db "
+  SELECT q.source_model, ROUND(AVG(e.composite_score), 2) AS avg, q.answer
+  FROM candidate_answers q
+  JOIN candidate_evaluations e ON e.candidate_id = q.id
+  GROUP BY q.id
+  ORDER BY avg DESC
+  LIMIT 10;"
 
-# GPU stats
 watch -n 2 nvidia-smi
 ```
+
+## AutoResearch
+
+AutoResearch is intentionally conservative. It can adjust process parameters
+such as perspectives per cycle, answers per perspective, comparison rounds,
+generation temperature, and generation prompt suffixes. It promotes changes only
+after repeated wins above a margin, reducing overfitting to noisy self-scores.
 
 ## License
 
 MIT
-
-## Acknowledgments
-
-- Douglas Adams, for the question (and the answer)
-- NVIDIA, for putting a petaflop on a desk
-- Andrej Karpathy, for the autoresearch pattern
-- Nous Research, for Hermes Agent
-- Google, for Gemma 4
-
-*The answer is 42. Now let's find the Question.*

@@ -2,8 +2,8 @@
 LLM Client for local model inference via vLLM OpenAI-compatible API.
 
 Supports two model instances:
-- Explorer (Gemma 4 26B MoE): Fast expansion, high throughput
-- Reasoner (Gemma 4 31B Dense): Deep reasoning for debates/judging
+- Explorer (Gemma 4 E4B): Fast perspective/question generation
+- Reasoner (Gemma 4 26B MoE): Answer synthesis, debate, and judging
 """
 
 import asyncio
@@ -29,7 +29,7 @@ class ModelConfig:
 EXPLORER_CONFIG = ModelConfig(
     name="explorer",
     base_url="http://localhost:8001/v1",
-    model_id="google/gemma-4-26b-a4b-it",
+    model_id="google/gemma-4-E4B-it",
     temperature=0.9,   # Higher temp for creative exploration
     top_p=0.95,
 )
@@ -37,7 +37,7 @@ EXPLORER_CONFIG = ModelConfig(
 REASONER_CONFIG = ModelConfig(
     name="reasoner",
     base_url="http://localhost:8002/v1",
-    model_id="google/gemma-4-31b-it",
+    model_id="google/gemma-4-26b-a4b-it",
     temperature=0.6,   # Lower temp for coherent reasoning
     top_p=0.9,
 )

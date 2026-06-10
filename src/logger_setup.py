@@ -45,8 +45,7 @@ class ConsoleFormatter(logging.Formatter):
 
     # Component-specific colors
     COMPONENT_COLORS = {
-        "[MCTS]": "\033[36m",     # Cyan
-        "[DEBATE]": "\033[35m",   # Magenta
+        "[COMPARE]": "\033[35m",  # Magenta
         "[JUDGE]": "\033[33m",    # Yellow
         "[EXPAND]": "\033[34m",   # Blue
         "[LEADER]": "\033[32m",   # Green

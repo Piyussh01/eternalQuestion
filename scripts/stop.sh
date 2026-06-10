@@ -22,5 +22,5 @@ fi
 pkill -f "vllm serve" 2>/dev/null && echo "[STOP] Killed remaining vLLM processes" || true
 
 echo "[STOP] All processes stopped."
-echo "[STOP] Your MCTS tree is safe in: logs/mcts_tree.db"
+echo "[STOP] Your experiment database is safe in: logs/deep_thought.db"
 echo "[STOP] Resume anytime by running: bash scripts/run.sh"
