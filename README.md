@@ -55,22 +55,26 @@ claim hidden chain-of-thought.
 
 Each answer is scored from 0-10 on four axes:
 
-| Axis | Weight | Meaning |
-|---|---:|---|
-| Directness | 0.30 | Answers the meaning of life, nothing more and nothing less |
-| Depth | 0.30 | Carries real philosophical weight without padding |
-| Universality | 0.20 | Applies across many kinds of conscious beings |
-| Resilience | 0.20 | Survives critique from the opposing model |
+
+| Axis         | Weight | Meaning                                                    |
+| ------------ | ------ | ---------------------------------------------------------- |
+| Directness   | 0.30   | Answers the meaning of life, nothing more and nothing less |
+| Depth        | 0.30   | Carries real philosophical weight without padding          |
+| Universality | 0.20   | Applies across many kinds of conscious beings              |
+| Resilience   | 0.20   | Survives critique from the opposing model                  |
+
 
 ## 24-Hour Phases
 
-| Phase | Hours | Strategy |
-|---|---:|---|
-| Warm-up | 0-1 | Seed answers and calibrate perspective probes |
-| Exploration | 1-12 | Sweep many perspectives across human experience |
-| Refinement | 12-20 | Attack stronger answers from neglected perspectives |
-| Consensus | 20-23 | Compress recurring truths into shorter candidates |
-| Final Judgment | 23-24 | Re-evaluate top answers with full comparisons |
+
+| Phase          | Hours | Strategy                                            |
+| -------------- | ----- | --------------------------------------------------- |
+| Warm-up        | 0-1   | Seed answers and calibrate perspective probes       |
+| Exploration    | 1-12  | Sweep many perspectives across human experience     |
+| Refinement     | 12-20 | Attack stronger answers from neglected perspectives |
+| Consensus      | 20-23 | Compress recurring truths into shorter candidates   |
+| Final Judgment | 23-24 | Re-evaluate top answers with full comparisons       |
+
 
 ## Quick Start
 
@@ -90,71 +94,6 @@ Outputs are written to:
 
 - `logs/deep_thought.db` - SQLite candidate/evaluation history
 - `logs/run_report.json` - full run summary
-- `logs/final_results.json` - top final answers
-- `logs/deep_thought.log` - structured runtime logs
-
-## Public Dashboard
-
-The Next.js dashboard lives in `web/`. Locally, it reads SQLite. On Vercel, set
-Supabase env vars and it reads the hosted public mirror instead.
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-For hosted deployment:
-
-1. Run `scripts/supabase_schema.sql` in the Supabase SQL editor.
-2. Set these Vercel env vars for the `web/` project:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-3. On the Spark, start the exporter with private write credentials:
-
-```bash
-export SUPABASE_URL=https://your-project-ref.supabase.co
-export SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-nohup bash scripts/run_supabase_exporter.sh > logs/supabase_exporter.log 2>&1 &
-```
-
-The dashboard is designed to show the experiment as it happens: active
-perspective, candidate answers, advocacy/critique excerpts, judge reasoning,
-scores, leaderboard movement, and eliminated answers. It should make the search
-legible to the public without claiming to expose hidden chain-of-thought.
-
-## Project Structure
-
-```
-src/
-  orchestrator.py    # 24-hour perspective-to-answer experiment loop
-  debate.py          # model comparison and judging
-  expander.py        # perspective and answer generation
-  autoresearch.py    # conservative process experiment scheduler
-  db.py              # SQLite persistence
-  llm_client.py      # vLLM OpenAI-compatible client
-scripts/
-  start_vllm.sh      # starts both local model servers
-  run.sh             # runs the 24-hour experiment
-  run_supabase_exporter.sh # mirrors public rows to Supabase
-  stop.sh            # stops vLLM servers
-web/                 # realtime Next.js dashboard
-config/models.json   # model serving configuration
-```
-
-## Monitoring
-
-```bash
-sqlite3 logs/deep_thought.db "
-  SELECT q.source_model, ROUND(AVG(e.composite_score), 2) AS avg, q.answer
-  FROM candidate_answers q
-  JOIN candidate_evaluations e ON e.candidate_id = q.id
-  GROUP BY q.id
-  ORDER BY avg DESC
-  LIMIT 10;"
-
-watch -n 2 nvidia-smi
-```
 
 ## AutoResearch
 
